@@ -391,5 +391,25 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "huatuo_qa_train": {
+    "file_name": "huatuo_qa/huatuo_qa_train.json",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system",
+      "history": "history"
+    }
+  },
+  "huatuo_qa_eval": {
+    "file_name": "huatuo_qa/huatuo_qa_eval.json",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system",
+      "history": "history"
+    }
   }
 }
