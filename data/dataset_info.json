@@ -411,5 +411,45 @@
       "system": "system",
       "history": "history"
     }
+  },
+  "c_med_qa": {
+    "file_name": "public_qa/c_med_qa.json",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system",
+      "history": "history"
+    }
+  },
+  "web_med_qa": {
+    "file_name": "public_qa/web_med_qa.json",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system",
+      "history": "history"
+    }
+  },
+  "usmle_qa": {
+    "file_name": "usmle_qa/usmle_qa.json",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system",
+      "history": "history"
+    }
+  },
+  "bcexam_qa": {
+    "file_name": "bcexam_qa/bcexam_qa.json",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system",
+      "history": "history"
+    }
   }
 }
