@@ -411,5 +411,25 @@
       "system": "system",
       "history": "history"
     }
+  },
+  "med_qa": {
+    "file_name": "med_qa/med_qa.json",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system",
+      "history": "history"
+    }
+  },
+  "med_qa_test": {
+    "file_name": "med_qa/med_qa_test.json",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "system": "system",
+      "history": "history"
+    }
   }
 }
