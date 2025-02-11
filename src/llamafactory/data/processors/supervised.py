@@ -1,4 +1,4 @@
-# Copyright 2024 the LlamaFactory team.
+# Copyright 2025 the LlamaFactory team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
+from ...extras import logging
 from ...extras.constants import IGNORE_INDEX
-from ...extras.logging import get_logger
 from .processor_utils import greedy_knapsack, infer_seqlen
 
 
@@ -24,11 +24,11 @@ if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer, ProcessorMixin
 
     from ...hparams import DataArguments
-    from ..mm_plugin import ImageInput, VideoInput
+    from ..mm_plugin import AudioInput, ImageInput, VideoInput
     from ..template import Template
 
 
-logger = get_logger(__name__)
+logger = logging.get_logger(__name__)
 
 
 def _encode_supervised_example(
@@ -38,6 +38,7 @@ def _encode_supervised_example(
     tools: Optional[str],
     images: Sequence["ImageInput"],
     videos: Sequence["VideoInput"],
+    audios: Sequence["AudioInput"],
     template: "Template",
     tokenizer: "PreTrainedTokenizer",
     processor: Optional["ProcessorMixin"],
@@ -45,8 +46,8 @@ def _encode_supervised_example(
     train_on_prompt: bool,
     mask_history: bool,
 ) -> Tuple[List[int], List[int]]:
-    messages = template.mm_plugin.process_messages(prompt + response, images, videos, processor)
-    input_ids, labels = template.mm_plugin.process_token_ids([], [], images, videos, tokenizer, processor)
+    messages = template.mm_plugin.process_messages(prompt + response, images, videos, audios, processor)
+    input_ids, labels = template.mm_plugin.process_token_ids([], [], images, videos, audios, tokenizer, processor)
     encoded_pairs = template.encode_multiturn(tokenizer, messages, system, tools)
     total_length = len(input_ids) + (1 if template.efficient_eos else 0)
     if mask_history:
@@ -99,7 +100,9 @@ def preprocess_supervised_dataset(
     model_inputs = defaultdict(list)
     for i in range(len(examples["_prompt"])):
         if len(examples["_prompt"][i]) % 2 != 1 or len(examples["_response"][i]) != 1:
-            logger.warning("Dropped invalid example: {}".format(examples["_prompt"][i] + examples["_response"][i]))
+            logger.warning_rank0(
+                "Dropped invalid example: {}".format(examples["_prompt"][i] + examples["_response"][i])
+            )
             continue
 
         input_ids, labels = _encode_supervised_example(
@@ -109,6 +112,7 @@ def preprocess_supervised_dataset(
             tools=examples["_tools"][i],
             images=examples["_images"][i] or [],
             videos=examples["_videos"][i] or [],
+            audios=examples["_audios"][i] or [],
             template=template,
             tokenizer=tokenizer,
             processor=processor,
@@ -121,6 +125,7 @@ def preprocess_supervised_dataset(
         model_inputs["labels"].append(labels)
         model_inputs["images"].append(examples["_images"][i])
         model_inputs["videos"].append(examples["_videos"][i])
+        model_inputs["audios"].append(examples["_audios"][i])
 
     return model_inputs
 
@@ -136,12 +141,14 @@ def preprocess_packed_supervised_dataset(
     # build inputs with format `<bos> X1 Y1 <eos> <bos> X2 Y2 <eos>`
     # and labels with format `<ignore> ... <ignore> Y1 <eos> <ignore> ... <ignore> Y2 <eos>`
     valid_num = 0
-    batch_input_ids, batch_labels, batch_images, batch_videos = [], [], [], []
+    batch_input_ids, batch_labels, batch_images, batch_videos, batch_audios = [], [], [], [], []
     lengths = []
     length2indexes = defaultdict(list)
     for i in range(len(examples["_prompt"])):
         if len(examples["_prompt"][i]) % 2 != 1 or len(examples["_response"][i]) != 1:
-            logger.warning("Dropped invalid example: {}".format(examples["_prompt"][i] + examples["_response"][i]))
+            logger.warning_rank0(
+                "Dropped invalid example: {}".format(examples["_prompt"][i] + examples["_response"][i])
+            )
             continue
 
         input_ids, labels = _encode_supervised_example(
@@ -151,6 +158,7 @@ def preprocess_packed_supervised_dataset(
             tools=examples["_tools"][i],
             images=examples["_images"][i] or [],
             videos=examples["_videos"][i] or [],
+            audios=examples["_audios"][i] or [],
             template=template,
             tokenizer=tokenizer,
             processor=processor,
@@ -160,7 +168,7 @@ def preprocess_packed_supervised_dataset(
         )
         length = len(input_ids)
         if length > data_args.cutoff_len:
-            logger.warning("Dropped lengthy example with length {} > {}.".format(length, data_args.cutoff_len))
+            logger.warning_rank0(f"Dropped lengthy example with length {length} > {data_args.cutoff_len}.")
         else:
             lengths.append(length)
             length2indexes[length].append(valid_num)
@@ -168,19 +176,21 @@ def preprocess_packed_supervised_dataset(
             batch_labels.append(labels)
             batch_images.append(examples["_images"][i] or [])
             batch_videos.append(examples["_videos"][i] or [])
+            batch_audios.append(examples["_audios"][i] or [])
             valid_num += 1
 
     model_inputs = defaultdict(list)
     knapsacks = greedy_knapsack(lengths, data_args.cutoff_len - 1)  # reserved for the padding token
     for knapsack in knapsacks:
         packed_input_ids, packed_attention_masks, packed_labels = [], [], []
-        packed_images, packed_videos = [], []
+        packed_images, packed_videos, packed_audios = [], [], []
         for i, length in enumerate(knapsack):
             index = length2indexes[length].pop()
             packed_input_ids += batch_input_ids[index]
             packed_labels += batch_labels[index]
             packed_images += batch_images[index]
             packed_videos += batch_videos[index]
+            packed_audios += batch_audios[index]
             if data_args.neat_packing:
                 packed_attention_masks += [i + 1] * len(batch_input_ids[index])  # start from 1
             else:
@@ -203,6 +213,7 @@ def preprocess_packed_supervised_dataset(
         model_inputs["labels"].append(packed_labels)
         model_inputs["images"].append(packed_images or None)
         model_inputs["videos"].append(packed_videos or None)
+        model_inputs["audios"].append(packed_audios or None)
 
     return model_inputs
 
@@ -212,4 +223,4 @@ def print_supervised_dataset_example(example: Dict[str, List[int]], tokenizer: "
     print("input_ids:\n{}".format(example["input_ids"]))
     print("inputs:\n{}".format(tokenizer.decode(example["input_ids"], skip_special_tokens=False)))
     print("label_ids:\n{}".format(example["labels"]))
-    print("labels:\n{}".format(tokenizer.decode(valid_labels, skip_special_tokens=False)))
+    print(f"labels:\n{tokenizer.decode(valid_labels, skip_special_tokens=False)}")

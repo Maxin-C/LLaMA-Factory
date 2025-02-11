@@ -1,4 +1,4 @@
-# Copyright 2024 the LlamaFactory team.
+# Copyright 2025 the LlamaFactory team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ class DatasetAttr:
     tools: Optional[str] = None
     images: Optional[str] = None
     videos: Optional[str] = None
+    audios: Optional[str] = None
     # rlhf columns
     chosen: Optional[str] = None
     rejected: Optional[str] = None
@@ -87,11 +88,11 @@ def get_dataset_list(dataset_names: Optional[Sequence[str]], dataset_dir: str) -
             config_path = os.path.join(dataset_dir, DATA_CONFIG)
 
         try:
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 dataset_info = json.load(f)
         except Exception as err:
             if len(dataset_names) != 0:
-                raise ValueError("Cannot open {} due to {}.".format(config_path, str(err)))
+                raise ValueError(f"Cannot open {config_path} due to {str(err)}.")
 
             dataset_info = None
 
@@ -109,7 +110,7 @@ def get_dataset_list(dataset_names: Optional[Sequence[str]], dataset_dir: str) -
             continue
 
         if name not in dataset_info:
-            raise ValueError("Undefined dataset {} in {}.".format(name, DATA_CONFIG))
+            raise ValueError(f"Undefined dataset {name} in {DATA_CONFIG}.")
 
         has_hf_url = "hf_hub_url" in dataset_info[name]
         has_ms_url = "ms_hub_url" in dataset_info[name]
@@ -135,7 +136,7 @@ def get_dataset_list(dataset_names: Optional[Sequence[str]], dataset_dir: str) -
         dataset_attr.set_attr("num_samples", dataset_info[name])
 
         if "columns" in dataset_info[name]:
-            column_names = ["system", "tools", "images", "videos", "chosen", "rejected", "kto_tag"]
+            column_names = ["system", "tools", "images", "videos", "audios", "chosen", "rejected", "kto_tag"]
             if dataset_attr.formatting == "alpaca":
                 column_names.extend(["prompt", "query", "response", "history"])
             else:

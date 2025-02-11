@@ -1,4 +1,4 @@
-# Copyright 2024 the LlamaFactory team.
+# Copyright 2025 the LlamaFactory team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
+from ...extras import logging
 from ...extras.constants import IGNORE_INDEX
-from ...extras.logging import get_logger
 from .processor_utils import infer_seqlen
 
 
@@ -24,11 +24,11 @@ if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer, ProcessorMixin
 
     from ...hparams import DataArguments
-    from ..mm_plugin import ImageInput, VideoInput
+    from ..mm_plugin import AudioInput, ImageInput, VideoInput
     from ..template import Template
 
 
-logger = get_logger(__name__)
+logger = logging.get_logger(__name__)
 
 
 def _encode_feedback_example(
@@ -39,6 +39,7 @@ def _encode_feedback_example(
     tools: Optional[str],
     images: Sequence["ImageInput"],
     videos: Sequence["VideoInput"],
+    audios: Sequence["AudioInput"],
     template: "Template",
     tokenizer: "PreTrainedTokenizer",
     processor: Optional["ProcessorMixin"],
@@ -56,8 +57,8 @@ def _encode_feedback_example(
     else:
         kl_messages = prompt + [kl_response[1]]
 
-    messages = template.mm_plugin.process_messages(messages, images, videos, processor)
-    kl_messages = template.mm_plugin.process_messages(kl_messages, images, videos, processor)
+    messages = template.mm_plugin.process_messages(messages, images, videos, audios, processor)
+    kl_messages = template.mm_plugin.process_messages(kl_messages, images, videos, audios, processor)
     prompt_ids, response_ids = template.encode_oneturn(tokenizer, messages, system, tools)
     kl_prompt_ids, kl_response_ids = template.encode_oneturn(tokenizer, kl_messages, system, tools)
 
@@ -65,8 +66,12 @@ def _encode_feedback_example(
         response_ids += [tokenizer.eos_token_id]
         kl_response_ids += [tokenizer.eos_token_id]
 
-    prompt_ids, _ = template.mm_plugin.process_token_ids(prompt_ids, None, images, videos, tokenizer, processor)
-    kl_prompt_ids, _ = template.mm_plugin.process_token_ids(kl_prompt_ids, None, images, videos, tokenizer, processor)
+    prompt_ids, _ = template.mm_plugin.process_token_ids(
+        prompt_ids, None, images, videos, audios, tokenizer, processor
+    )
+    kl_prompt_ids, _ = template.mm_plugin.process_token_ids(
+        kl_prompt_ids, None, images, videos, audios, tokenizer, processor
+    )
 
     source_len, target_len = infer_seqlen(len(prompt_ids), len(response_ids), cutoff_len)
     prompt_ids = prompt_ids[:source_len]
@@ -94,7 +99,9 @@ def preprocess_feedback_dataset(
     model_inputs = defaultdict(list)
     for i in range(len(examples["_prompt"])):
         if len(examples["_prompt"][i]) % 2 != 1 or len(examples["_response"][i]) < 2:
-            logger.warning("Dropped invalid example: {}".format(examples["_prompt"][i] + examples["_response"][i]))
+            logger.warning_rank0(
+                "Dropped invalid example: {}".format(examples["_prompt"][i] + examples["_response"][i])
+            )
             continue
 
         input_ids, labels, kl_input_ids, kl_labels, kto_tag = _encode_feedback_example(
@@ -105,6 +112,7 @@ def preprocess_feedback_dataset(
             tools=examples["_tools"][i],
             images=examples["_images"][i] or [],
             videos=examples["_videos"][i] or [],
+            audios=examples["_audios"][i] or [],
             template=template,
             tokenizer=tokenizer,
             processor=processor,
@@ -119,10 +127,11 @@ def preprocess_feedback_dataset(
         model_inputs["kto_tags"].append(kto_tag)
         model_inputs["images"].append(examples["_images"][i])
         model_inputs["videos"].append(examples["_videos"][i])
+        model_inputs["audios"].append(examples["_audios"][i])
 
     desirable_num = sum([1 for tag in model_inputs["kto_tags"] if tag])
     undesirable_num = len(model_inputs["kto_tags"]) - desirable_num
     if desirable_num == 0 or undesirable_num == 0:
-        logger.warning("Your dataset only has one preference type.")
+        logger.warning_rank0("Your dataset only has one preference type.")
 
     return model_inputs
